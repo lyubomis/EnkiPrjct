@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Microservices and Database Architecture Proposal</title>
+    <meta name="description" content="Scalable microservices and database architecture proposal with visual diagrams." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #0b1220;
+        --panel: #0f172a;
+        --text: #e6edf6;
+        --muted: #98a2b3;
+        --accent: #60a5fa;
+        --border: #1e293b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI,
+          Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        color: var(--text);
+        background: radial-gradient(1200px 800px at 20% -10%, #0e1b36 0%, var(--bg) 45%),
+          linear-gradient(180deg, rgba(28, 100, 242, 0.06), rgba(28, 100, 242, 0) 25%);
+      }
+      header {
+        padding: 40px 24px 12px;
+        text-align: center;
+      }
+      h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: 0.2px; }
+      .subtitle { color: var(--muted); font-size: 14px; }
+      main { padding: 16px; max-width: 1200px; margin: 0 auto 80px; }
+      section { margin-top: 28px; }
+      h2 { font-size: 18px; margin: 0 0 12px; }
+      p, li { color: #c7d2fe; line-height: 1.55; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 16px;
+      }
+      .card {
+        grid-column: span 12;
+        background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 16px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      }
+      @media (min-width: 980px) {
+        .half { grid-column: span 6; }
+      }
+      .legend {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px;
+      }
+      .legend div { background: rgba(255,255,255,0.02); border: 1px dashed var(--border); border-radius: 10px; padding: 10px; font-size: 13px; color: var(--muted); }
+      .mermaid { background: #0b1020; border-radius: 12px; padding: 12px; border: 1px solid var(--border); }
+      .muted { color: var(--muted); font-size: 13px; }
+      .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background: #0f172a; padding: 1px 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: #cbd5e1; }
+      footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; border-top: 1px solid var(--border); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Microservices and Database Architecture Proposal</h1>
+      <div class="subtitle">EnkiConnect on Supabase + Vercel: service schemas, event-driven design, and scalable data</div>
+    </header>
+    <main>
+      <section class="grid">
+        <div class="card">
+          <h2>Goals and Principles</h2>
+          <ul>
+            <li><strong>DB-per-service</strong> via Supabase <strong>PostgreSQL</strong> schemas; add polyglot stores for cache/search/analytics when needed.</li>
+            <li><strong>Event-driven</strong> with Outbox + CDC → <strong>Upstash QStash/Kafka</strong>; <strong>CQRS</strong> for read performance.</li>
+            <li><strong>Strong consistency</strong> for auth/exchanges; <strong>horizontal scale</strong> for notifications, matching, and reads.</li>
+          </ul>
+          <div class="legend" style="margin-top: 8px;">
+            <div><strong>PostgreSQL (Supabase)</strong>: Service schemas — auth, users, exchanges, matching, notifications</div>
+            <div><strong>Redis</strong>: Sessions, rate limits, job locks, hot cache</div>
+            <div><strong>OpenSearch</strong>: Users/Exchanges search indices</div>
+            <div><strong>Upstash QStash/Kafka</strong>: Domain events, CDC, analytics feeds</div>
+            <div><strong>Storage + CDN</strong>: Supabase Storage or S3 + CDN for media</div>
+            <div><strong>External</strong>: EmailJS, Twilio, OpenAI</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h2>System Architecture (high-level components)</h2>
+          <div class="mermaid">
+            graph LR
+              subgraph "Shared Infrastructure"
+                PG[("PostgreSQL (Supabase) — service schemas")]
+                Q[("Upstash QStash / Kafka")]
+                R[("Redis (Upstash/ElastiCache)")]
+                OS[("OpenSearch / Elasticsearch")]
+                CH[("ClickHouse / BigQuery")]
+                STG[("Storage: Supabase Storage / S3")]
+                CDN[("CDN")]
+              end
+
+              subgraph "API Gateway"
+                GW["Vercel Functions (Gateway)"]
+              end
+
+              subgraph "Auth"
+                SAUTH["Supabase Auth"]
+              end
+
+              subgraph "Users Service"
+                USR["Users Service"]
+                USR --> PG
+              end
+
+              subgraph "Exchanges Service"
+                EX["Exchanges Service"]
+                EX --> PG
+                EX -- "Outbox events" --> Q
+              end
+
+              subgraph "Matching Service"
+                MATCH["Matching Service"]
+                MATCH --> PG
+                MATCH -- "Outbox events" --> Q
+              end
+
+              subgraph "Notifications Service"
+                NOTIF["Notifications Service"]
+                NOTIF --> PG
+                NOTIF -- "Email/SMS" --> EMAIL["EmailJS / Twilio"]
+              end
+
+              subgraph "AI Gift Engine"
+                AI["AI Gift Engine"]
+                AI -- "OpenAI API" --> OPENAI["OpenAI"]
+              end
+
+              subgraph "Chat Integration"
+                CHAT["Chat (Supabase Realtime)"]
+              end
+
+              subgraph "Search Indexing"
+                INDEXER["Search Indexer"]
+                INDEXER --> OS
+              end
+
+              subgraph "Analytics Pipeline"
+                ETL["Streaming ETL / CDC Consumers"]
+                ETL --> CH
+              end
+
+              %% Gateway routes
+              GW --> USR
+              GW --> EX
+              GW --> MATCH
+              GW --> NOTIF
+              GW --> AI
+              GW --> CHAT
+
+              %% Events
+              Q -- "invites/matching events" --> NOTIF
+              Q -- "domain events" --> INDEXER
+              Q -- "events" --> ETL
+
+              %% Storage & CDN
+              USR -- "avatars" --> STG
+              EX -- "attachments" --> STG
+              STG --> CDN
+
+              %% Auth and caching
+              GW -- "JWT verify" --> SAUTH
+              R -- "sessions / rate limits / locks" --> GW
+              R -- "locks" --> MATCH
+          </div>
+          <p class="muted">Services use Supabase Postgres schemas. Outbox events are published to QStash/Kafka for notifications, indexing, and analytics.</p>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card half">
+          <h2>Write Path (create exchange and run matching)</h2>
+          <div class="mermaid">
+            flowchart TD
+              U[Organizer] --> GW[API Gateway]
+              GW --> EX[Exchanges Service]
+              EX --> PGE[(PostgreSQL - exchanges)]
+              EX -- Outbox --> O1[Outbox]
+              O1 -->|Publish| Q[(QStash/Kafka)]
+              Q --> NOTIF[Notifications Service]
+              NOTIF --> EMAIL[EmailJS / Twilio]
+
+              U -->|Run matching| GW
+              GW --> MATCH[Matching Service]
+              MATCH --> PGM[(PostgreSQL - matching.assignments)]
+              MATCH -- Outbox --> O2[Outbox]
+              O2 -->|Publish| Q
+
+              Q --> IDX[Search Indexer]
+              IDX --> OS[(OpenSearch)]
+              Q --> A[Analytics ETL]
+              A --> CH[(ClickHouse/BigQuery)]
+          </div>
+          <p class="muted">Exchange creates/invites and matching runs write to Postgres, publish events, trigger notifications, update search, and feed analytics.</p>
+        </div>
+        <div class="card half">
+          <h2>Read Path (participant dashboard)</h2>
+          <div class="mermaid">
+            flowchart TD
+              P[Participant] --> GW[API Gateway]
+              GW --> EXQ[Exchanges Service]
+              EXQ --> PGX[(PostgreSQL - exchanges)]
+              GW --> UQ[Users Service]
+              UQ --> PGU[(PostgreSQL - users)]
+              GW --> NQ[Notifications Service]
+              NQ --> PGN[(PostgreSQL - notifications)]
+              GW --> CHAT[Chat (Supabase Realtime)]
+              GW --> R[(Redis Cache)]
+              STG[(Storage)] -. media .-> P
+          </div>
+          <p class="muted">Dashboard reads via the gateway from service schemas; Redis accelerates hot data; chat via Supabase Realtime; media from Storage/CDN.</p>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h2>High-level Data Model (ER-style)</h2>
+          <div class="mermaid">
+            classDiagram
+              class Account {
+                id uuid PK
+                email unique
+                status
+                created_at
+              }
+              class User {
+                id uuid PK
+                handle unique
+                name
+                created_at
+              }
+              class Profile {
+                user_id PK FK
+                bio
+                avatar_url
+                timezone
+                private bool
+              }
+              User "1" -- "1" Profile : has
+
+              class Exchange {
+                id uuid PK
+                organizer_id FK
+                type
+                name
+                rules_json
+                created_at
+              }
+              class Participant {
+                exchange_id PK
+                user_id PK
+                role
+                status
+                joined_at
+              }
+              class Invitation {
+                id uuid PK
+                exchange_id FK
+                email
+                token
+                status
+                sent_at
+                accepted_at
+              }
+              class Round {
+                id uuid PK
+                exchange_id FK
+                number
+                status
+                run_at
+              }
+              class Assignment {
+                id uuid PK
+                exchange_id FK
+                round_id FK
+                giver_id FK
+                receiver_id FK
+                created_at
+              }
+
+              class NotificationTemplate {
+                id uuid PK
+                key
+                channel
+                body
+              }
+              class NotificationPreference {
+                user_id PK
+                channel
+                enabled
+              }
+              class Delivery {
+                id uuid PK
+                user_id FK
+                exchange_id FK
+                channel
+                template_id FK
+                status
+                created_at
+              }
+
+              class OutboxEvent {
+                id uuid PK
+                topic
+                payload
+                created_at
+                processed_at
+              }
+
+              Account "1" -- "many" User : owns?
+              Exchange "1" -- "many" Participant : has
+              Exchange "1" -- "many" Round : has
+              Round "1" -- "many" Assignment : produces
+              User "1" -- "many" Assignment : giver
+              User "1" -- "many" Delivery : notified
+              Exchange "1" -- "many" Invitation : invites
+          </div>
+          <p class="muted">Relational data for auth, users, exchanges, matching, and notifications in Supabase Postgres; cache in Redis; search indices in OpenSearch.</p>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h2>Notes</h2>
+          <ul>
+            <li>Supabase Auth + RLS for secure access; service schemas own their data.</li>
+            <li>Outbox tables per schema; publisher pushes to QStash/Kafka; consumers update search and analytics.</li>
+            <li>Zero-downtime migrations; read replicas when needed; Redis for locks and hot reads.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h2>How to read this page</h2>
+          <p class="muted">Diagrams are rendered client-side with Mermaid. If you see plain text instead of diagrams, ensure scripts are allowed for this file or open it via a local server.</p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      © Architecture Guide — Microservices + Polyglot Persistence
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+      // Prefer dark theme visuals
+      mermaid.initialize({ startOnLoad: true, theme: 'dark', securityLevel: 'loose' });
+    </script>
+  </body>
+</html>
+
+
